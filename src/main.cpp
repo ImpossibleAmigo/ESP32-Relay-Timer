@@ -14,8 +14,12 @@ bool testCompleted = false;
 
 void IRAM_ATTR senseISR() {
   if (!resultReady) {
-    measuredDelay = micros() - startTime;
-    resultReady = true;
+    unsigned long currentTime = micros();
+    // Ігноруємо апаратний шум (EMI) та брязкіт, швидший за 1000 мкс
+    if (currentTime - startTime > 1000) { 
+      measuredDelay = currentTime - startTime;
+      resultReady = true;
+    }
   }
 }
 
@@ -61,7 +65,6 @@ void loop() {
       totalOffTime += offDelays[i];
     }
 
-    // Розрахунок та вивід середнього значення
     float avgOnTime = (float)totalOnTime / NUM_MEASUREMENTS;
     float avgOffTime = (float)totalOffTime / NUM_MEASUREMENTS;
 
