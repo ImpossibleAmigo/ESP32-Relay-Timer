@@ -1,19 +1,34 @@
 #include <Arduino.h>
 
-// Визначаємо піни для ESP32-S3
-const int RELAY_CTRL_PIN = 4;  // Керування котушкою
-const int RELAY_SENSE_PIN = 5; // Зчитування сухого контакту
+const int RELAY_CTRL_PIN = 4;
+const int RELAY_SENSE_PIN = 5;
+
+// Змінні для вимірювання часу (volatile для переривань)
+volatile unsigned long startTime = 0;
+volatile unsigned long measuredDelay = 0;
+volatile bool resultReady = false;
+
+// Обробник переривання (ISR)
+void IRAM_ATTR senseISR() {
+  // Фіксуємо час лише першого спрацювання (ігноруємо брязкіт)
+  if (!resultReady) {
+    measuredDelay = micros() - startTime;
+    resultReady = true;
+  }
+}
 
 void setup() {
   Serial.begin(115200);
   
-  // Налаштовуємо піни
   pinMode(RELAY_CTRL_PIN, OUTPUT);
-  digitalWrite(RELAY_CTRL_PIN, LOW); // Реле вимкнено за замовчуванням
+  digitalWrite(RELAY_CTRL_PIN, LOW);
   
-  pinMode(RELAY_SENSE_PIN, INPUT_PULLUP); // Внутрішня підтяжка
+  pinMode(RELAY_SENSE_PIN, INPUT_PULLUP);
   
-  Serial.println("\n--- Система ініціалізована ---");
+  // Підключаємо переривання
+  attachInterrupt(digitalPinToInterrupt(RELAY_SENSE_PIN), senseISR, CHANGE);
+  
+  Serial.println("\n--- Система ініціалізована. Переривання підключено ---");
   delay(1000);
 }
 
