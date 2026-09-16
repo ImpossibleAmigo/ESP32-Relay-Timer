@@ -32,17 +32,18 @@ void setup() {
 
 void loop() {
   if (!testCompleted) {
+    long totalOnTime = 0;
+    long totalOffTime = 0;
+
     for (int i = 0; i < NUM_MEASUREMENTS; i++) {
-      // 1. Вимірювання увімкнення
       resultReady = false;
       startTime = micros();
       digitalWrite(RELAY_CTRL_PIN, HIGH);
       
       while (!resultReady && (micros() - startTime < 1000000)) { yield(); }
       onDelays[i] = measuredDelay;
-      delay(500); // Чекаємо завершення брязкоту
+      delay(500);
 
-      // 2. Вимірювання вимкнення
       resultReady = false;
       startTime = micros();
       digitalWrite(RELAY_CTRL_PIN, LOW);
@@ -55,7 +56,23 @@ void loop() {
       Serial.print(" -> Увімкнення: "); Serial.print(onDelays[i]);
       Serial.print(" мкс | Вимкнення: "); Serial.print(offDelays[i]);
       Serial.println(" мкс");
+
+      totalOnTime += onDelays[i];
+      totalOffTime += offDelays[i];
     }
-    testCompleted = true; // Тимчасово зупиняємо тут
+
+    // Розрахунок та вивід середнього значення
+    float avgOnTime = (float)totalOnTime / NUM_MEASUREMENTS;
+    float avgOffTime = (float)totalOffTime / NUM_MEASUREMENTS;
+
+    Serial.println("\n--- Результати тестування (10 вимірювань) ---");
+    Serial.print("Середній час увімкнення: ");
+    Serial.print(avgOnTime / 1000.0, 3); Serial.println(" мс");
+    
+    Serial.print("Середній час вимкнення: ");
+    Serial.print(avgOffTime / 1000.0, 3); Serial.println(" мс");
+    Serial.println("-------------------------------------------");
+
+    testCompleted = true;
   }
 }
