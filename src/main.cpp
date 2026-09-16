@@ -1,18 +1,22 @@
 #include <Arduino.h>
 
-// put function declarations here:
-int myFunction(int, int);
+// Визначаємо піни для ESP32-S3
+const int RELAY_CTRL_PIN = 4;  // Керування котушкою
+const int RELAY_SENSE_PIN = 5; // Зчитування сухого контакту
 
 void setup() {
-  // put your setup code here, to run once:
-  int result = myFunction(2, 3);
+  Serial.begin(115200);
+  
+  // Налаштовуємо піни
+  pinMode(RELAY_CTRL_PIN, OUTPUT);
+  digitalWrite(RELAY_CTRL_PIN, LOW); // Реле вимкнено за замовчуванням
+  
+  pinMode(RELAY_SENSE_PIN, INPUT_PULLUP); // Внутрішня підтяжка
+  
+  Serial.println("\n--- Система ініціалізована ---");
+  delay(1000);
 }
 
 void loop() {
-  // put your main code here, to run repeatedly:
-}
-
-// put function definitions here:
-int myFunction(int x, int y) {
-  return x + y;
+  // Поки що порожньо
 }
