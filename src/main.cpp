@@ -42,9 +42,9 @@ void IRAM_ATTR handleInterrupt() {
 void setup() {
   Serial.begin(115200);
   
-  // Налаштування піна керування (Low-Level Trigger)
-  pinMode(RELAY_CTRL_PIN, OUTPUT);
-  digitalWrite(RELAY_CTRL_PIN, HIGH); // Спочатку вимкнено (HIGH = вимкнено)
+  // Налаштування піна керування (Режим Open Drain для сумісності з 5V реле)
+  pinMode(RELAY_CTRL_PIN, OUTPUT_OPEN_DRAIN);
+  digitalWrite(RELAY_CTRL_PIN, HIGH); // Спочатку вимкнено (високий імпеданс)
   
   // Налаштування піна зчитування з внутрішньою підтяжкою
   pinMode(SENSOR_PIN, INPUT_PULLUP);
@@ -67,9 +67,9 @@ void loop() {
     triggerTime = micros(); 
     
     if (isTurningOn) {
-      digitalWrite(RELAY_CTRL_PIN, LOW); // Вмикаємо реле (LOW = увімкнено)
+      digitalWrite(RELAY_CTRL_PIN, LOW); // Вмикаємо реле (замикаємо на землю)
     } else {
-      digitalWrite(RELAY_CTRL_PIN, HIGH); // Вимикаємо реле
+      digitalWrite(RELAY_CTRL_PIN, HIGH); // Вимикаємо реле (відпускаємо пін)
     }
     
     // Чекаємо на відповідь від переривання (максимум 1 секунду)
