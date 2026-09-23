@@ -1,81 +1,103 @@
 #include <Arduino.h>
 
-const int RELAY_CTRL_PIN = 4;
-const int RELAY_SENSE_PIN = 5;
+// Піни підключення
+const int RELAY_CTRL_PIN = 4; // Пін керування обмоткою реле (до IN)
+const int SENSOR_PIN = 5;     // Пін зчитування сухого контакту (до NO)
 
-volatile unsigned long startTime = 0;
-volatile unsigned long measuredDelay = 0;
-volatile bool resultReady = false;
+// Змінні для вимірювання часу (volatile, бо використовуються в перериванні)
+volatile unsigned long triggerTime = 0;
+volatile unsigned long actuationTime = 0;
+volatile bool measurementReady = false;
 
-const int NUM_MEASUREMENTS = 10;
-unsigned long onDelays[NUM_MEASUREMENTS];
-unsigned long offDelays[NUM_MEASUREMENTS];
-bool testCompleted = false;
+// Захист від брязкоту (Debounce)
+volatile unsigned long lastInterruptTime = 0;
+const unsigned long DEBOUNCE_DELAY_US = 20000; // 20 мс ігнорування брязкоту
 
-void IRAM_ATTR senseISR() {
-  if (!resultReady) {
-    unsigned long currentTime = micros();
-    // Ігноруємо апаратний шум (EMI) та брязкіт, швидший за 1000 мкс
-    if (currentTime - startTime > 1000) { 
-      measuredDelay = currentTime - startTime;
-      resultReady = true;
+// Змінні для статистики
+const int MAX_MEASUREMENTS = 10;
+int currentCycle = 0;
+
+unsigned long sumOnTime = 0;
+unsigned long sumOffTime = 0;
+int onCount = 0;
+int offCount = 0;
+
+bool isTurningOn = false;
+
+// Обробник переривання
+void IRAM_ATTR handleInterrupt() {
+  unsigned long currentTime = micros();
+  
+  // Ігноруємо механічний брязкіт контактів
+  if (currentTime - lastInterruptTime > DEBOUNCE_DELAY_US) {
+    if (triggerTime > 0) {
+      actuationTime = currentTime - triggerTime;
+      measurementReady = true;
+      triggerTime = 0; // Скидаємо таймер
     }
   }
+  lastInterruptTime = currentTime;
 }
 
 void setup() {
   Serial.begin(115200);
-  pinMode(RELAY_CTRL_PIN, OUTPUT);
-  digitalWrite(RELAY_CTRL_PIN, LOW);
-  pinMode(RELAY_SENSE_PIN, INPUT_PULLUP);
-  attachInterrupt(digitalPinToInterrupt(RELAY_SENSE_PIN), senseISR, CHANGE);
   
-  Serial.println("\n--- Початок вимірювання затримки реле ---");
-  delay(1000);
+  // Налаштування піна керування (Low-Level Trigger)
+  pinMode(RELAY_CTRL_PIN, OUTPUT);
+  digitalWrite(RELAY_CTRL_PIN, HIGH); // Спочатку вимкнено (HIGH = вимкнено)
+  
+  // Налаштування піна зчитування з внутрішньою підтяжкою
+  pinMode(SENSOR_PIN, INPUT_PULLUP);
+  
+  // Налаштовуємо переривання на будь-яку зміну стану (замикання або розмикання)
+  attachInterrupt(digitalPinToInterrupt(SENSOR_PIN), handleInterrupt, CHANGE);
+  
+  delay(2000);
+  Serial.println("=== Початок вимірювання затримки реле ===");
 }
 
 void loop() {
-  if (!testCompleted) {
-    long totalOnTime = 0;
-    long totalOffTime = 0;
-
-    for (int i = 0; i < NUM_MEASUREMENTS; i++) {
-      resultReady = false;
-      startTime = micros();
-      digitalWrite(RELAY_CTRL_PIN, HIGH);
-      
-      while (!resultReady && (micros() - startTime < 1000000)) { yield(); }
-      onDelays[i] = measuredDelay;
-      delay(500);
-
-      resultReady = false;
-      startTime = micros();
-      digitalWrite(RELAY_CTRL_PIN, LOW);
-      
-      while (!resultReady && (micros() - startTime < 1000000)) { yield(); }
-      offDelays[i] = measuredDelay;
-      delay(500);
-      
-      Serial.print("Вимір "); Serial.print(i + 1);
-      Serial.print(" -> Увімкнення: "); Serial.print(onDelays[i]);
-      Serial.print(" мкс | Вимкнення: "); Serial.print(offDelays[i]);
-      Serial.println(" мкс");
-
-      totalOnTime += onDelays[i];
-      totalOffTime += offDelays[i];
-    }
-
-    float avgOnTime = (float)totalOnTime / NUM_MEASUREMENTS;
-    float avgOffTime = (float)totalOffTime / NUM_MEASUREMENTS;
-
-    Serial.println("\n--- Результати тестування (10 вимірювань) ---");
-    Serial.print("Середній час увімкнення: ");
-    Serial.print(avgOnTime / 1000.0, 3); Serial.println(" мс");
+  if (currentCycle < MAX_MEASUREMENTS) {
+    delay(1500); // Пауза перед наступною дією
     
-    Serial.print("Середній час вимкнення: ");
-    Serial.print(avgOffTime / 1000.0, 3); Serial.println(" мс");
-    Serial.println("-------------------------------------------");
-
-    testCompleted = true;
+    isTurningOn = !isTurningOn; 
+    measurementReady = false;
+    
+    // Запам'ятовуємо час рівно перед відправкою сигналу
+    triggerTime = micros(); 
+    
+    if (isTurningOn) {
+      digitalWrite(RELAY_CTRL_PIN, LOW); // Вмикаємо реле (LOW = увімкнено)
+    } else {
+      digitalWrite(RELAY_CTRL_PIN, HIGH); // Вимикаємо реле
+    }
+    
+    // Чекаємо на відповідь від переривання (максимум 1 секунду)
+    unsigned long waitStart = millis();
+    while (!measurementReady && (millis() - waitStart < 1000)) {}
+    
+    if (measurementReady) {
+      if (isTurningOn) {
+        sumOnTime += actuationTime;
+        onCount++;
+        Serial.printf("Цикл %d | УВІМКНЕННЯ: %lu мкс\n", onCount, actuationTime);
+      } else {
+        sumOffTime += actuationTime;
+        offCount++;
+        Serial.printf("Цикл %d | ВИМКНЕННЯ:  %lu мкс\n", offCount, actuationTime);
+        currentCycle++; // Плюсуємо цикл тільки після повного увімкнення-вимкнення
+      }
+    } else {
+      Serial.println("Помилка: Переривання не спрацювало! Перевір контакти NO та COM.");
+      triggerTime = 0;
+    }
+    
+  } else if (currentCycle == MAX_MEASUREMENTS) {
+    Serial.println("\n=== ФІНАЛЬНІ РЕЗУЛЬТАТИ (Середнє значення) ===");
+    Serial.printf("Середній час УВІМКНЕННЯ: %lu мкс\n", sumOnTime / onCount);
+    Serial.printf("Середній час ВИМКНЕННЯ:  %lu мкс\n", sumOffTime / offCount);
+    Serial.println("================================================");
+    
+    currentCycle++; // Зупиняємо виконання
   }
 }
